@@ -1,0 +1,136 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  clerkId     String   @unique
+  email       String   @unique
+  name        String
+  role        Role     @default(VIEWER)
+  institution String?
+  bio         String?
+  phone       String?
+  website     String?
+  avatar      String?
+  isVerified  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  resources Resource[]
+  bookmarks Bookmark[]
+  activities Activity[]
+
+  @@map("users")
+}
+
+model Resource {
+  id           String       @id @default(cuid())
+  title        String
+  description  String
+  fileName     String
+  filePath     String
+  fileSize     Int
+  mimeType     String
+  subject      String
+  resourceType ResourceType
+  semester     String?
+  isPrivate    Boolean      @default(false)
+  allowContact Boolean      @default(true)
+  views        Int          @default(0)
+  downloads    Int          @default(0)
+  uploaderId   String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  // Relations
+  uploader   User         @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  tags       ResourceTag[]
+  bookmarks  Bookmark[]
+  activities Activity[]
+
+  @@map("resources")
+}
+
+model Tag {
+  id   String @id @default(cuid())
+  name String @unique
+
+  // Relations
+  resources ResourceTag[]
+
+  @@map("tags")
+}
+
+model ResourceTag {
+  resourceId String
+  tagId      String
+
+  // Relations
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  tag      Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([resourceId, tagId])
+  @@map("resource_tags")
+}
+
+model Bookmark {
+  id         String   @id @default(cuid())
+  userId     String
+  resourceId String
+  category   String   @default("general")
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resourceId])
+  @@map("bookmarks")
+}
+
+model Activity {
+  id         String       @id @default(cuid())
+  userId     String
+  resourceId String
+  action     ActivityType
+  timestamp  DateTime     @default(now())
+
+  // Relations
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@map("activities")
+}
+
+enum Role {
+  VIEWER
+  CONTRIBUTOR
+  ADMIN
+}
+
+enum ResourceType {
+  PDF
+  DOC
+  DOCX
+  PPT
+  PPTX
+  OTHER
+  LINK
+}
+
+enum ActivityType {
+  VIEW
+  DOWNLOAD
+  BOOKMARK
+  SHARE
+}
