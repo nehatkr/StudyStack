@@ -73,6 +73,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           website: data.website,
         },
       });
+      console.log(data);
+      
       onClose();
     } catch (error) {
       registerForm.setError('email', { message: 'Registration failed' });

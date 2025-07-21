@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Bell, User, Menu, X, Upload, LogOut, Settings, BookOpen } from 'lucide-react';
+import { Search, Bell, User, Menu, X, Upload, LogOut, Settings, BookOpen, NotebookIcon, NotebookTabs } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { AuthModal } from '../auth/AuthModal';
 import { Button } from '../ui/Button';
@@ -129,7 +129,11 @@ export const Header: React.FC<HeaderProps> = ({ onSearch, onUploadClick }) => {
                           <span>Settings</span>
                         </button>
                         <button className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-black hover:bg-background-200 transition-colors">
-                          <BookOpen className="h-4 w-4" />
+                          <NotebookTabs className="h-4 w-4" />
+                          <span>Previous Year Papers</span>
+                        </button>
+                        <button className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-black hover:bg-background-200 transition-colors">
+                          <NotebookIcon className="h-4 w-4" />
                           <span>My Resources</span>
                         </button>
                         <button

@@ -51,7 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id: clerkUser.id,
           name: clerkUser.fullName || clerkUser.emailAddresses[0]?.emailAddress || 'User',
           email: clerkUser.emailAddresses[0]?.emailAddress || '',
-          role: (clerkUser.publicMetadata?.role as 'viewer' | 'contributor') || 'viewer',
+          role: (clerkUser.publicMetadata?.role as 'viewer' | 'contributor') || String,
           avatar: clerkUser.imageUrl,
           institution: (clerkUser.publicMetadata?.institution as string) || undefined,
           bio: (clerkUser.publicMetadata?.bio as string) || undefined,
