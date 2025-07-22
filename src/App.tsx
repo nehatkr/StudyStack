@@ -9,24 +9,31 @@ import { ContributorDashboard } from './components/dashboard/ContributorDashboar
 import { ResourceViewModal } from './components/resources/ResourceViewModal';
 import { AuthModal } from './components/auth/AuthModal';
 import { UploadModal } from './components/upload/UploadModal';
+import { PreviousYearPapersPage } from './pages/PreviousYearPapersPage'; // NEW: Import PYQ page
 import { useResources } from './hooks/useResources';
 import { SearchFilters, Resource } from './types';
 
 const queryClient = new QueryClient();
 
 const AppContent: React.FC = () => {
-  const { user, isAuthenticated, isLoading: authLoading } = useAuth(); // Get isAuthenticated and authLoading
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [filters, setFilters] = useState<SearchFilters>({
     sortBy: 'newest',
   });
-  // Initialize isAuthModalOpen to false by default.
-  // We'll control its opening explicitly in useEffect.
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState<'dashboard' | 'pyq'>('dashboard'); // NEW: State for current page
 
-  const { resources, activities, bookmarks, analytics, loading, error } = useResources(filters);
+  // Dummy data for analytics and activities for initial render
+  const dummyAnalytics = {
+    totalUploads: 0, totalViews: 0, totalDownloads: 0, totalBookmarks: 0, topResources: []
+  };
+  const dummyActivities = [];
+  const dummyBookmarks = [];
+
+  const { resources, activities = dummyActivities, bookmarks = dummyBookmarks, analytics = dummyAnalytics, loading, error } = useResources(filters);
 
   const handleSearch = (query: string) => {
     setFilters(prev => ({ ...prev, query }));
@@ -65,27 +72,24 @@ const AppContent: React.FC = () => {
     // In a real app, this would open share modal
   };
 
-  // Get related resources based on category and tags
   const getRelatedResources = (resource: Resource) => {
     return resources
       .filter(r =>
         r.id !== resource.id &&
-        (r.category === resource.category ||
-         r.tags.some(tag => resource.tags.includes(tag)))
+        (r.subject === resource.subject ||
+         r.tags.some(tag => resource.tags.map(t => t.tag.name).includes(tag.tag.name)))
       )
       .slice(0, 5);
   };
 
   // Effect to control AuthModal visibility based on authentication status
   useEffect(() => {
-    // Only open the AuthModal if authentication is NOT loading AND the user is NOT authenticated
     if (!authLoading && !isAuthenticated) {
       setIsAuthModalOpen(true);
     } else if (!authLoading && isAuthenticated) {
-      // If authentication is loaded and user IS authenticated, ensure modal is closed
       setIsAuthModalOpen(false);
     }
-  }, [isAuthenticated, authLoading]); // Depend on isAuthenticated and authLoading
+  }, [isAuthenticated, authLoading]);
 
   // Render a loading state for the entire app while auth is loading
   if (authLoading) {
@@ -101,38 +105,43 @@ const AppContent: React.FC = () => {
     <div className="min-h-screen bg-background-500 animate-fade-in">
       <Header
         onSearch={handleSearch}
-        onUploadClick={user?.role === 'contributor' ? () => setIsUploadModalOpen(true) : undefined}
+        onUploadClick={isAuthenticated && user?.role === 'contributor' ? () => setIsUploadModalOpen(true) : undefined}
+        onNavigateToPyq={() => setCurrentPage('pyq')} // NEW: Pass navigation function
+        onNavigateToDashboard={() => setCurrentPage('dashboard')} // NEW: Pass navigation function
+        currentPage={currentPage} // NEW: Pass current page for active styling
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-slide-up">
-        {isAuthenticated ? ( // Only render dashboards if authenticated
-          user?.role === 'viewer' ? (
-            <ViewerDashboard
-              resources={resources}
-              activities={activities}
-              bookmarks={bookmarks}
-              loading={loading}
-              onResourceView={handleResourceView}
-              onResourceDownload={handleResourceDownload}
-              onBookmarkToggle={handleBookmarkToggle}
-            />
-          ) : user?.role === 'contributor' ? (
-            <ContributorDashboard
-              resources={resources.filter(r => r.uploadedBy === user.id)}
-              analytics={analytics}
-              loading={loading}
-              onUploadClick={() => setIsUploadModalOpen(true)}
-              onResourceEdit={handleResourceEdit}
-            />
-          ) : (
-            // Fallback if user is authenticated but role is not recognized
-            <div className="text-center py-12 animate-scale-in">
-              <h2 className="text-2xl font-bold text-black mb-4">Welcome to StudyStack</h2>
-              <p className="text-secondary-600">You are signed in, but your role is not recognized. Please contact support.</p>
-            </div>
-          )
+        {isAuthenticated ? (
+          currentPage === 'dashboard' ? ( // Conditional rendering based on currentPage state
+            user?.role === 'viewer' ? (
+              <ViewerDashboard
+                resources={resources}
+                activities={activities}
+                bookmarks={bookmarks}
+                loading={loading}
+                onResourceView={handleResourceView}
+                onResourceDownload={handleResourceDownload}
+                onBookmarkToggle={handleBookmarkToggle}
+              />
+            ) : user?.role === 'contributor' || user?.role === 'admin' ? (
+              <ContributorDashboard
+                resources={resources.filter(r => r.uploaderId === user.id)}
+                analytics={analytics}
+                loading={loading}
+                onUploadClick={() => setIsUploadModalOpen(true)}
+                onResourceEdit={handleResourceEdit}
+              />
+            ) : (
+              <div className="text-center py-12 animate-scale-in">
+                <h2 className="text-2xl font-bold text-black mb-4">Welcome to StudyStack</h2>
+                <p className="text-secondary-600">You are signed in, but your role is not recognized. Please contact support.</p>
+              </div>
+            )
+          ) : currentPage === 'pyq' ? ( // Render PYQ page
+            <PreviousYearPapersPage />
+          ) : null // Fallback for unknown page state
         ) : (
-          // Content for unauthenticated users, which will trigger the AuthModal
           <div className="text-center py-12 animate-scale-in">
             <h2 className="text-2xl font-bold text-black mb-4">Welcome to StudyStack</h2>
             <p className="text-secondary-600">Please sign in to access your dashboard</p>
@@ -142,7 +151,6 @@ const AppContent: React.FC = () => {
 
       <Footer />
 
-      {/* AuthModal is now conditionally rendered based on isAuthModalOpen */}
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}

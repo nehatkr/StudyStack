@@ -46,6 +46,7 @@ export interface Resource {
   subject: string;
   resourceType: 'PDF' | 'DOC' | 'DOCX' | 'PPT' | 'PPTX' | 'OTHER' | 'LINK';
   semester?: string;
+  year?: number;
   isPrivate: boolean;
   allowContact: boolean;
   fileName?: string;
@@ -82,6 +83,7 @@ export interface SearchFilters {
   subject?: string;
   semester?: string;
   resourceType?: string;
+  year?: number;
   sortBy: 'newest' | 'popular' | 'relevance';
 }
 

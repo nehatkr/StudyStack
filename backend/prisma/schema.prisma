@@ -44,6 +44,7 @@ model Resource {
   subject      String
   resourceType ResourceType
   semester     String?
+  year         Int? 
   isPrivate    Boolean      @default(false)
   allowContact Boolean      @default(true)
   views        Int          @default(0)
