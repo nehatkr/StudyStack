@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { X, Mail, Lock, User, Building, Globe, Phone, FileText } from 'lucide-react';
+import { X, Mail, Lock, User, Building, Globe, Phone } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -51,6 +51,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
       onClose();
     } catch (error) {
       loginForm.setError('email', { message: 'Invalid credentials' });
+      console.log(error);
+      
     }
   };
 
@@ -73,8 +75,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           website: data.website,
         },
       });
-      console.log(data);
-      
       onClose();
     } catch (error) {
       registerForm.setError('email', { message: 'Registration failed' });

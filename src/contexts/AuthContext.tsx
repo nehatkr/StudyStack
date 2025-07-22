@@ -1,6 +1,6 @@
 // project/src/contexts/AuthContext.tsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, AuthState } from '../types';
+import { User, AuthState, RegisterData } from '../types'; // Import RegisterData from types
 import { useClerk, useUser, useAuth as useClerkAuth } from '@clerk/clerk-react';
 
 interface AuthContextType extends AuthState {
@@ -11,18 +11,6 @@ interface AuthContextType extends AuthState {
   verifyEmail: (token: string) => Promise<void>;
   updateProfile: (userData: Partial<User>) => Promise<void>;
   isAuthenticated: boolean | undefined;
-}
-
-interface RegisterData {
-  name: string;
-  email: string;
-  password: string;
-  confirmPassword: string;
-  role: 'viewer' | 'contributor';
-  institution?: string;
-  bio?: string;
-  phone?: string;
-  website?: string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -44,18 +32,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Effect to synchronize Clerk's user data with your local user state
   useEffect(() => {
     if (clerkIsLoaded) {
       if (clerkIsSignedIn && clerkUser) {
+        // --- START FIX: Robust role mapping ---
+        let userRole: 'viewer' | 'contributor' | 'admin' = 'viewer'; // Default to viewer
+        if (clerkUser.unsafeMetadata && typeof clerkUser.unsafeMetadata.role === 'string') {
+          const roleFromMetadata = clerkUser.unsafeMetadata.role.toLowerCase();
+          if (roleFromMetadata === 'contributor') {
+            userRole = 'contributor';
+          } else if (roleFromMetadata === 'admin') { // Assuming 'admin' is also a possible role
+            userRole = 'admin';
+          }
+          // If it's not 'contributor' or 'admin', it remains 'viewer' (default)
+        }
+        // --- END FIX ---
+
         const mappedUser: User = {
           id: clerkUser.id,
           name: clerkUser.fullName || clerkUser.emailAddresses[0]?.emailAddress || 'User',
           email: clerkUser.emailAddresses[0]?.emailAddress || '',
-          role: (clerkUser.publicMetadata?.role as 'viewer' | 'contributor') || String,
+          role: userRole, // Use the determined userRole
           avatar: clerkUser.imageUrl,
-          institution: (clerkUser.publicMetadata?.institution as string) || undefined,
-          bio: (clerkUser.publicMetadata?.bio as string) || undefined,
-          contactInfo: (clerkUser.publicMetadata?.contactInfo as { phone?: string; website?: string }) || undefined,
+          institution: (clerkUser.unsafeMetadata?.institution as string) || undefined,
+          bio: (clerkUser.unsafeMetadata?.bio as string) || undefined,
+          contactInfo: (clerkUser.unsafeMetadata?.contactInfo as { phone?: string; website?: string }) || undefined,
           isVerified: clerkUser.emailAddresses[0]?.verification?.status === 'verified',
           createdAt: new Date(clerkUser.createdAt),
           lastLogin: clerkUser.lastSignInAt ? new Date(clerkUser.lastSignInAt) : undefined,
@@ -76,6 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         password,
         strategy: 'password',
       });
+console.log(res);
 
       if (res.status === 'complete') {
         await clerk.setActive({
@@ -101,13 +104,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const nameParts = userData.name.split(' ').filter(Boolean);
       const firstName = nameParts.length > 0 ? nameParts[0] : '';
       const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+console.log(userData);
 
       const res = await client.signUp.create({
         emailAddress: userData.email,
         password: userData.password,
         firstName: firstName,
         lastName: lastName,
-        publicMetadata: {
+         unsafeMetadata: {
+          role: userData.role, // Pass the role here initially
           institution: userData.institution,
           bio: userData.bio,
           contactInfo: userData.phone || userData.website ? {
@@ -116,36 +121,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } : undefined,
         },
       });
+    
+      console.log(res);
+      
 
       if (res.status === 'complete') {
         try {
-          // Update publicMetadata using res.signUp.update()
-          const updatedSignUp = await res.signUp.update({
-            publicMetadata: {
-              ...res.signUp.publicMetadata,
+          // Robust update of unsafeMetadata using res.signUp.update()
+          await res.signUp.update({
+            unsafeMetadata: {
+              ...res.signUp.unsafeMetadata,
               role: userData.role,
             },
           });
-          console.log('User role updated via res.signUp.update() in Clerk publicMetadata:', userData.role);
-
-          // --- NEW: Force a refresh of the Clerk user object ---
-          // This ensures the useUser() hook has the latest publicMetadata
-          if (clerkUser && typeof clerkUser.reload === 'function') {
-            await clerkUser.reload();
-            console.log('Clerk user object reloaded after metadata update.');
-          } else {
-            console.warn('clerkUser.reload() not available or not a function.');
-          }
-          // --- END NEW ---
+          console.log('User role updated via res.signUp.update() in Clerk unsafeMetadata:', userData.role);
 
         } catch (updateError) {
-          console.error('Error updating publicMetadata after sign-up:', updateError);
+          console.error('Error updating unsafeMetadata after sign-up:', updateError);
         }
 
         await clerk.setActive({
           session: res.createdSessionId,
           beforeEmit: () => {},
         });
+
+        // Force a refresh of the Clerk user object to ensure useUser() has latest unsafeMetadata
+        if (clerkUser && typeof clerkUser.reload === 'function') {
+          await clerkUser.reload();
+          console.log('Clerk user object reloaded after metadata update.');
+        } else {
+          console.warn('clerkUser.reload() not available or not a function.');
+        }
 
       } else if (res.status === 'needs_email_verification') {
         console.log('Sign-up needs email verification. Send email to:', res.emailAddress);
@@ -223,8 +229,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         firstName: userData.name?.split(' ')[0],
         lastName: userData.name?.split(' ').slice(1).join(' ') || '',
         imageUrl: userData.avatar || '',
-        publicMetadata: {
-          ...clerkUser.publicMetadata,
+        unsafeMetadata: {
+          ...clerkUser.unsafeMetadata,
           role: userData.role,
           institution: userData.institution,
           bio: userData.bio,
