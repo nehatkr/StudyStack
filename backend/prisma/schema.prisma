@@ -1,3 +1,5 @@
+// backend/prisma/schema.prisma
+
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
@@ -5,133 +7,131 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Configure your database connection
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id          String   @id @default(cuid())
-  clerkId     String   @unique
-  email       String   @unique
-  name        String
-  role        Role     @default(VIEWER)
-  institution String?
-  bio         String?
-  phone       String?
-  website     String?
-  avatar      String?
-  isVerified  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  resources Resource[]
-  bookmarks Bookmark[]
-  activities Activity[]
-
-  @@map("users")
-}
-
-model Resource {
-  id           String       @id @default(cuid())
-  title        String
-  description  String
-  fileName     String
-  filePath     String
-  fileSize     Int
-  mimeType     String
-  subject      String
-  resourceType ResourceType
-  semester     String?
-  year         Int? 
-  isPrivate    Boolean      @default(false)
-  allowContact Boolean      @default(true)
-  views        Int          @default(0)
-  downloads    Int          @default(0)
-  uploaderId   String
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-
-  // Relations
-  uploader   User         @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
-  tags       ResourceTag[]
-  bookmarks  Bookmark[]
-  activities Activity[]
-
-  @@map("resources")
-}
-
-model Tag {
-  id   String @id @default(cuid())
-  name String @unique
-
-  // Relations
-  resources ResourceTag[]
-
-  @@map("tags")
-}
-
-model ResourceTag {
-  resourceId String
-  tagId      String
-
-  // Relations
-  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
-  tag      Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
-
-  @@id([resourceId, tagId])
-  @@map("resource_tags")
-}
-
-model Bookmark {
-  id         String   @id @default(cuid())
-  userId     String
-  resourceId String
-  category   String   @default("general")
-  createdAt  DateTime @default(now())
-
-  // Relations
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, resourceId])
-  @@map("bookmarks")
-}
-
-model Activity {
-  id         String       @id @default(cuid())
-  userId     String
-  resourceId String
-  action     ActivityType
-  timestamp  DateTime     @default(now())
-
-  // Relations
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
-
-  @@map("activities")
-}
-
+// Enum for user roles
 enum Role {
   VIEWER
   CONTRIBUTOR
   ADMIN
 }
 
-enum ResourceType {
-  PDF
-  DOC
-  DOCX
-  PPT
-  PPTX
-  OTHER
-  LINK
+// User Model
+model User {
+  id          String    @id @default(uuid())
+  clerkId     String    @unique
+  email       String    @unique
+  name        String?
+  role        Role      @default(VIEWER) // Default role is VIEWER
+  institution String?
+  isVerified  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  uploadedResources Resource[]
+  bookmarks         Bookmark[] // Relation to bookmarks
+  activities        Activity[] // Relation to activities
+
+  @@map("users")
 }
 
-enum ActivityType {
+// Resource Model
+model Resource {
+  id           String     @id @default(uuid())
+  title        String
+  description  String
+  subject      String
+  resourceType String     // e.g., 'PDF', 'DOC', 'PYQ', 'LINK'
+  semester     String?
+  year         Int?       // NEW: Optional year for resources like PYQs
+  isPrivate    Boolean    @default(false)
+  allowContact Boolean    @default(true)
+
+  fileName     String?
+  filePath     String?
+  fileSize     Int?
+  mimeType     String?
+
+  url          String?
+  isExternal   Boolean    @default(false)
+
+  views        Int        @default(0)
+  downloads    Int        @default(0)
+  bookmarks    Int        @default(0) // Total count of bookmarks for this resource
+  version      Int        @default(1)
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  uploaderId   String
+  uploader     User       @relation(fields: [uploaderId], references: [id])
+
+  tags         ResourceTag[]
+  bookmarkedBy Bookmark[] // Relation to users who bookmarked this resource
+  activities   Activity[] // Relation to activities related to this resource
+
+  @@map("resources")
+}
+
+// Tag Model
+model Tag {
+  id        String        @id @default(uuid())
+  name      String        @unique
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  resources ResourceTag[]
+
+  @@map("tags")
+}
+
+// Junction table for many-to-many relationship between Resource and Tag
+model ResourceTag {
+  resource   Resource @relation(fields: [resourceId], references: [id])
+  resourceId String
+  tag        Tag      @relation(fields: [tagId], references: [id])
+  tagId      String
+
+  @@id([resourceId, tagId])
+  @@map("resource_tags")
+}
+
+// Bookmark Model
+model Bookmark {
+  id         String   @id @default(uuid())
+  userId     String
+  resourceId String
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resourceId]) // A user can bookmark a resource only once
+  @@map("bookmarks")
+}
+
+// Activity Model
+enum ActivityAction {
   VIEW
   DOWNLOAD
   BOOKMARK
   SHARE
+  UPLOAD // Added UPLOAD as a possible activity
+}
+
+model Activity {
+  id         String         @id @default(uuid())
+  userId     String
+  resourceId String
+  action     ActivityAction // Use the enum here
+  timestamp  DateTime       @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@map("activities")
 }

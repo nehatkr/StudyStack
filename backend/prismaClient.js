@@ -3,7 +3,8 @@
 
 import { PrismaClient } from '@prisma/client';
 
-export const prisma = new PrismaClient();
+const prisma = new PrismaClient();
+
 
 
 // backend/server.js
@@ -13,7 +14,6 @@ import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors'; // Import cors for cross-origin requests
 import resourceRoutes from './src/routes/resourceRoutes.js'; // Import resource routes
-import { authMiddleware } from './src/middleware/authMiddleware.js'; // Import the authentication middleware
 
 // Load environment variables from .env file
 dotenv.config();
@@ -27,7 +27,6 @@ app.use(express.json()); // Parse JSON request bodies
 
 // Routes
 // Mount the resource routes under the /api/resources path
-// The POST route will be protected by authMiddleware
 app.use('/api/resources', resourceRoutes);
 
 // Basic route for testing server status
@@ -41,76 +40,18 @@ app.listen(PORT, () => {
   console.log(`Access the API at http://localhost:${PORT}`);
 });
 
-// backend/src/middleware/authMiddleware.js
-// This middleware will verify Clerk authentication tokens.
-
-import { ClerkExpressRequireAuth } from '@clerk/clerk-sdk-node';
-import prisma from '../../prismaClient.js'; // Import Prisma client to interact with User model
-
-// This middleware requires authentication for routes it's applied to.
-// It also populates req.auth and req.user with Clerk user data.
-export const authMiddleware = ClerkExpressRequireAuth({
-  // Optionally, you can specify options here, e.g., to allow unauthenticated access to some routes
-  // or to customize how the user is loaded.
-});
-
-// Middleware to ensure the authenticated user exists in your database
-// and has the 'CONTRIBUTOR' role for specific actions.
-export const requireContributorRole = async (req, res, next) => {
-  // ClerkExpressRequireAuth should have populated req.auth and req.user
-  if (!req.auth || !req.auth.userId) {
-    return res.status(401).json({ message: 'Authentication required.' });
-  }
-
-  try {
-    // Find the user in your database using the Clerk userId
-    let user = await prisma.user.findUnique({
-      where: { clerkId: req.auth.userId },
-    });
-
-    // If user doesn't exist in your DB, create them (first-time login sync)
-    if (!user) {
-      // You might get more user details from Clerk's API if needed here
-      // For simplicity, we'll just create with basic info from auth
-      user = await prisma.user.create({
-        data: {
-          clerkId: req.auth.userId,
-          email: req.auth.user.emailAddresses[0].emailAddress, // Assuming primary email
-          name: req.auth.user.firstName || req.auth.user.emailAddresses[0].emailAddress, // Use first name or email
-          role: 'VIEWER', // Default to VIEWER, can be updated to CONTRIBUTOR later
-        },
-      });
-    }
-
-    // Attach the full user object from your DB to the request for later use
-    req.dbUser = user;
-
-    // Check if the user has the CONTRIBUTOR role
-    if (user.role !== 'CONTRIBUTOR' && user.role !== 'ADMIN') { // Admin can also upload
-      return res.status(403).json({ message: 'Forbidden: Only contributors or admins can perform this action.' });
-    }
-
-    next(); // Proceed to the next middleware or route handler
-  } catch (error) {
-    console.error('Error in requireContributorRole middleware:', error);
-    res.status(500).json({ message: 'Internal server error during authorization.' });
-  }
-};
-
-
 // backend/src/routes/resourceRoutes.js
 // This file defines the API routes for managing resources.
 
 import { Router } from 'express';
 import prisma from '../../prismaClient.js'; // Import the Prisma client
-import { authMiddleware, requireContributorRole } from '../middleware/authMiddleware.js'; // Import authentication and role middleware
 
 const router = Router();
 
 /**
  * @route POST /api/resources
  * @description Creates a new resource (note, syllabus, PYQ, or external link).
- * @access Private (restricted to authenticated contributors)
+ * @access Public (for now, will be restricted to contributors later)
  * @body {
  * title: string,
  * description: string,
@@ -127,13 +68,10 @@ const router = Router();
  * // For link-based resources:
  * url?: string,
  * isExternal?: boolean,
- * // uploaderId is now derived from authenticated user
+ * uploaderId: string // This will come from authenticated user later
  * }
  */
-router.post('/', authMiddleware, requireContributorRole, async (req, res) => {
-  // uploaderId is now extracted from the authenticated user via Clerk
-  const uploaderId = req.dbUser.id; // Use the ID from your database user object
-
+router.post('/', async (req, res) => {
   const {
     title,
     description,
@@ -148,29 +86,31 @@ router.post('/', authMiddleware, requireContributorRole, async (req, res) => {
     mimeType,
     url,
     isExternal = false,
+    uploaderId, // Temporary: will be derived from auth in future steps
   } = req.body;
 
   // Basic validation (more robust validation will be added later)
-  if (!title || !description || !subject || !resourceType) {
-    return res.status(400).json({ message: 'Missing required fields: title, description, subject, resourceType.' });
+  if (!title || !description || !subject || !resourceType || !uploaderId) {
+    return res.status(400).json({ message: 'Missing required fields.' });
   }
 
   // Ensure consistency based on resourceType and isExternal
-  if (resourceType === 'LINK') {
-    if (!url) {
-      return res.status(400).json({ message: 'URL is required for LINK type resources.' });
-    }
-    if (filePath || fileName || fileSize || mimeType) {
-      return res.status(400).json({ message: 'File-related fields should not be present for LINK type resources.' });
-    }
-  } else { // For file-based resources
-    if (!filePath) {
-      return res.status(400).json({ message: 'File path is required for file-based resources.' });
-    }
-    if (url) {
-      return res.status(400).json({ message: 'URL should not be present for file-based resources.' });
-    }
+  if (resourceType === 'LINK' && !url) {
+    return res.status(400).json({ message: 'URL is required for LINK type resources.' });
   }
+  if (resourceType !== 'LINK' && !filePath) {
+    // For file types, filePath (where the file is stored) is crucial
+    return res.status(400).json({ message: 'File path is required for file-based resources.' });
+  }
+  if (resourceType !== 'LINK' && isExternal) {
+    // If it's not a link type, it shouldn't be marked as external
+    return res.status(400).json({ message: 'isExternal should be false for file-based resources.' });
+  }
+  if (resourceType === 'LINK' && (!isExternal || filePath || fileName || fileSize || mimeType)) {
+    // If it's a link type, it must be external and file-related fields should be absent
+    return res.status(400).json({ message: 'Invalid fields for LINK type resource.' });
+  }
+
 
   try {
     const newResource = await prisma.resource.create({
@@ -182,14 +122,14 @@ router.post('/', authMiddleware, requireContributorRole, async (req, res) => {
         semester,
         isPrivate,
         allowContact,
-        fileName: resourceType !== 'LINK' ? fileName : null,
-        filePath: resourceType !== 'LINK' ? filePath : null,
-        fileSize: resourceType !== 'LINK' ? fileSize : null,
-        mimeType: resourceType !== 'LINK' ? mimeType : null,
-        url: resourceType === 'LINK' ? url : null,
-        isExternal: resourceType === 'LINK' ? true : false,
+        fileName: resourceType !== 'LINK' ? fileName : null, // Only store for file types
+        filePath: resourceType !== 'LINK' ? filePath : null, // Only store for file types
+        fileSize: resourceType !== 'LINK' ? fileSize : null, // Only store for file types
+        mimeType: resourceType !== 'LINK' ? mimeType : null, // Only store for file types
+        url: resourceType === 'LINK' ? url : null, // Only store for link types
+        isExternal: resourceType === 'LINK' ? true : false, // Set based on type
         uploader: {
-          connect: { id: uploaderId }, // Connect to the authenticated user's ID
+          connect: { id: uploaderId }, // Connect to an existing user
         },
       },
     });
