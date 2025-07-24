@@ -1,4 +1,4 @@
-// project/src/types.ts
+// project/src/types/index.ts
 
 // Define the structure of a User object in your application
 export interface User {
@@ -9,10 +9,8 @@ export interface User {
   avatar?: string; // Optional URL to user's avatar
   institution?: string; // Optional: User's institution/organization
   bio?: string; // Optional: User's biography
-  contactInfo?: { // Optional: Contact details
-    phone?: string;
-    website?: string;
-  };
+  phone?: string; // NEW: Optional phone number for contact
+  contactEmail?: string; // NEW: Optional email for direct contact (different from login email)
   isVerified: boolean; // Whether the user's email is verified
   createdAt: Date; // Date when the user account was created
   lastLogin?: Date; // Optional: Date of last login
@@ -34,8 +32,8 @@ export interface RegisterData {
   role: 'viewer' | 'contributor'; // The selected role during registration
   institution?: string;
   bio?: string;
-  phone?: string;
-  website?: string;
+  phone?: string; // NEW: Optional phone for registration
+  contactEmail?: string; // NEW: Optional contact email for registration
 }
 
 // Define the data structure for a resource
@@ -44,9 +42,9 @@ export interface Resource {
   title: string;
   description: string;
   subject: string;
-  resourceType: 'PDF' | 'DOC' | 'DOCX' | 'PPT' | 'PPTX' | 'OTHER' | 'LINK';
+  resourceType: 'PDF' | 'DOC' | 'DOCX' | 'PPT' | 'PPTX' | 'OTHER' | 'LINK' | 'PYQ'; // Added 'PYQ'
   semester?: string;
-  year?: number;
+  year?: number; // NEW: Optional year for resources like PYQs
   isPrivate: boolean;
   allowContact: boolean;
   fileName?: string;
@@ -65,8 +63,10 @@ export interface Resource {
   uploader: { // Simplified uploader info for display
     id: string;
     name: string;
-    email: string;
+    email: string; // This is the login email
     allowContact?: boolean;
+    phone?: string; // NEW: Phone number from uploader's profile
+    contactEmail?: string; // NEW: Contact email from uploader's profile
   };
   tags: { // Tags associated with the resource
     id: string;
@@ -75,6 +75,7 @@ export interface Resource {
       name: string;
     };
   }[];
+  isBookmarked?: boolean; // Whether the current user has bookmarked this resource
 }
 
 // Define search and filter parameters for resources
@@ -83,14 +84,14 @@ export interface SearchFilters {
   subject?: string;
   semester?: string;
   resourceType?: string;
-  year?: number;
+  year?: number; // NEW: Optional year filter
   sortBy: 'newest' | 'popular' | 'relevance';
 }
 
 // Define activity types
 export interface Activity {
   id: string;
-  type: 'view' | 'download' | 'bookmark' | 'share';
+  type: 'view' | 'download' | 'bookmark' | 'share' | 'upload'; // Added 'upload'
   resourceId: string;
   resourceTitle: string;
   timestamp: string;

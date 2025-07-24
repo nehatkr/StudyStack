@@ -3,22 +3,18 @@ import React, { Fragment, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon, ArrowDownTrayIcon, BookmarkIcon, ShareIcon } from '@heroicons/react/24/outline'; // Using Heroicons for consistency
 import { Button } from '../ui/Button';
-import { Input } from '../ui/Input'; // Assuming Input component is in ../ui/Input
+// import { Input } from '../ui/Input'; // Input is no longer needed in this component
 import { Card } from '../ui/Card';
 import { Resource } from '../../types'; // Import Resource type from your types/index.ts
-import { useForm } from 'react-hook-form'; // Assuming react-hook-form is used for the contact form
-import emailjs from 'emailjs-com'; // Assuming EmailJS for contact form submission
+// import { useForm } from 'react-hook-form'; // react-hook-form is no longer needed
+// import emailjs from 'emailjs-com'; // EmailJS is being removed
 import {
-  X, FileText, Download, Star, Calendar, User, Mail, Phone, MessageCircle, Send, BookOpen, ExternalLink, Eye, Bookmark, Share2 // Lucide icons from user's provided code
+  X, FileText, Download, Star, Calendar, User, Mail, Phone, MessageCircle, Send, BookOpen, ExternalLink, Eye, Share2 // Lucide icons from user's provided code
 } from 'lucide-react';
+import { HeartIcon as HeartIconOutline } from '@heroicons/react/24/outline'; // Outline heart for unbookmarked
+import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';   // Solid heart for bookmarked
 
-// Define the structure for the contact form
-interface ContactForm {
-  name: string;
-  email: string;
-  subject: string;
-  message: string;
-}
+// Removed ContactForm interface as it's no longer used
 
 interface ResourceViewModalProps {
   isOpen: boolean;
@@ -26,7 +22,7 @@ interface ResourceViewModalProps {
   resource: Resource | null;
   relatedResources: Resource[];
   onDownload: (resourceId: string) => void;
-  onBookmark: (resourceId: string) => void;
+  onBookmark: (resourceId: string) => Promise<void>;
   onShare: (resourceId: string) => void;
 }
 
@@ -40,11 +36,10 @@ export const ResourceViewModal: React.FC<ResourceViewModalProps> = ({
   onShare,
 }) => {
   const [activeTab, setActiveTab] = useState<'preview' | 'related' | 'contact'>('preview');
-  const [isContactLoading, setIsContactLoading] = useState(false);
-  const [contactStatus, setContactStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  // Removed isContactLoading and contactStatus states
+  const [bookmarkMessage, setBookmarkMessage] = useState<string | null>(null); // State for bookmark message
 
-  // Initialize react-hook-form for the contact form
-  const { register, handleSubmit, formState: { errors }, reset } = useForm<ContactForm>();
+  // Removed useForm hook
 
   // Function to safely format dates
   const formatDate = (dateString: string | Date | undefined | null) => {
@@ -54,7 +49,7 @@ export const ResourceViewModal: React.FC<ResourceViewModalProps> = ({
       if (isNaN(date.getTime())) {
         return 'Invalid Date';
       }
-      return date.toLocaleDateString('en-US', {
+      return new Date(dateString).toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
@@ -65,57 +60,7 @@ export const ResourceViewModal: React.FC<ResourceViewModalProps> = ({
     }
   };
 
-  // Handle contact form submission
-  const onContactSubmit = async (data: ContactForm) => {
-    if (!resource) return;
-
-    setIsContactLoading(true);
-    setContactStatus('idle');
-
-    try {
-      // EmailJS configuration - replace with your actual values
-      // You need to sign up for EmailJS (emailjs.com) to get these credentials.
-      // After signing up, create a service (e.g., 'Gmail'), a template, and get your User ID.
-      const serviceId = 'your_service_id'; // <<-- REPLACE THIS
-      const templateId = 'your_template_id'; // <<-- REPLACE THIS
-      const userId = 'your_user_id'; // <<-- REPLACE THIS (Public Key)
-
-      // Basic validation for EmailJS credentials
-      if (serviceId === 'your_service_id' || templateId === 'your_template_id' || userId === 'your_user_id') {
-        throw new Error("EmailJS credentials are not configured. Please update ResourceViewModal.tsx.");
-      }
-
-      const templateParams = {
-        to_name: resource.uploader?.name || 'Resource Contributor',
-        from_name: data.name,
-        from_email: data.email,
-        subject: data.subject,
-        message: data.message,
-        resource_title: resource.title,
-        resource_id: resource.id,
-        // Add contributor's email to template params for EmailJS to send to
-        contributor_email: resource.uploader?.email || 'N/A',
-      };
-
-      await emailjs.send(serviceId, templateId, templateParams, userId);
-
-      setContactStatus('success');
-      reset(); // Reset form on success
-
-      setTimeout(() => {
-        setContactStatus('idle');
-      }, 3000); // Clear status message after 3 seconds
-    } catch (error: any) {
-      console.error('Email send error:', error);
-      setContactStatus('error');
-
-      setTimeout(() => {
-        setContactStatus('idle');
-      }, 3000); // Clear status message after 3 seconds
-    } finally {
-      setIsContactLoading(false);
-    }
-  };
+  // Removed onContactSubmit function
 
   // Helper function to format file size
   const formatFileSize = (bytes: number | undefined) => {
@@ -141,9 +86,24 @@ export const ResourceViewModal: React.FC<ResourceViewModalProps> = ({
       case 'pyq':
         return '📜'; // Scroll icon for PYQ
       default:
-        return '�';
+        return '📁';
     }
   };
+
+  // Local handler for bookmark click to show message
+  const handleBookmarkClick = async (resourceId: string) => {
+    try {
+      await onBookmark(resourceId); // Call parent's bookmark handler
+      // The resource prop will be updated via react-query invalidation,
+      // so we can rely on its `isBookmarked` value for the message.
+      setBookmarkMessage(resource?.isBookmarked ? 'Removed from bookmarks!' : 'Bookmarked!');
+    } catch (error: any) {
+      setBookmarkMessage(`Error: ${error.message || 'Failed to toggle bookmark.'}`);
+    } finally {
+      setTimeout(() => setBookmarkMessage(null), 2000); // Clear message after 2 seconds
+    }
+  };
+
 
   if (!isOpen || !resource) return null;
 
@@ -242,11 +202,15 @@ export const ResourceViewModal: React.FC<ResourceViewModalProps> = ({
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => onBookmark(resource.id)}
-                        className="flex items-center space-x-1"
+                        onClick={() => handleBookmarkClick(resource.id)} // Call local handler
+                        className={`flex items-center space-x-1 ${resource.isBookmarked ? 'text-primary-600' : 'text-secondary-600'}`}
                       >
-                        <Bookmark className="h-4 w-4" />
-                        <span>Bookmark</span>
+                        {resource.isBookmarked ? (
+                          <HeartIconSolid className="h-4 w-4" /> // Solid icon if bookmarked
+                        ) : (
+                          <HeartIconOutline className="h-4 w-4" /> // Outline icon if not bookmarked
+                        )}
+                        <span>{resource.isBookmarked ? 'Bookmarked' : 'Bookmark'}</span>
                       </Button>
                       <Button
                         variant="ghost"
@@ -274,6 +238,13 @@ export const ResourceViewModal: React.FC<ResourceViewModalProps> = ({
                       </button>
                     </div>
                   </div>
+
+                  {/* Bookmark Message Display */}
+                  {bookmarkMessage && (
+                    <div className="px-6 py-2 text-center text-sm font-medium text-success-700 bg-success-50 border-b border-success-200 animate-fade-in-down">
+                      {bookmarkMessage}
+                    </div>
+                  )}
 
                   {/* Tab Navigation */}
                   <div className="flex border-b border-background-300">
@@ -454,117 +425,52 @@ export const ResourceViewModal: React.FC<ResourceViewModalProps> = ({
                                 <User className="h-8 w-8 text-white" />
                               </div>
                               <div>
-                                <h4 className="font-semibold text-black">{resource.uploader?.name}</h4> {/* Added optional chaining */}
+                                <h4 className="font-semibold text-black">{resource.uploader?.name || 'N/A'}</h4>
                                 <p className="text-sm text-secondary-600">
-                                  {/* Placeholder for institution/role if available on uploader object */}
-                                  {resource.uploader?.institution || 'Educator'} {/* Added optional chaining */}
+                                  {resource.uploader?.institution || 'Educator'}
                                 </p>
                                 <p className="text-sm text-secondary-500">
-                                  {/* Placeholder for specific university if available */}
-                                  {resource.uploader?.bio || 'No bio provided'} {/* Added optional chaining */}
+                                  {resource.uploader?.bio || 'No bio provided'}
                                 </p>
                                 <div className="flex items-center space-x-4 mt-2">
-                                  {resource.uploader?.email && ( /* Added optional chaining */
-                                    <div className="flex items-center space-x-1 text-sm text-secondary-500">
+                                  {resource.uploader?.email && (
+                                    <a href={`mailto:${resource.uploader.email}`} className="flex items-center space-x-1 text-sm text-secondary-500 hover:text-primary-600 hover:underline">
                                       <Mail className="h-3 w-3" />
                                       <span>{resource.uploader.email}</span>
-                                    </div>
+                                    </a>
                                   )}
-                                  {resource.uploader?.contactInfo?.phone && ( /* Removed allowContact check, added optional chaining */
-                                    <div className="flex items-center space-x-1 text-sm text-secondary-500">
+                                  {resource.uploader?.contactEmail && ( // NEW: Display contactEmail
+                                    <a href={`mailto:${resource.uploader.contactEmail}`} className="flex items-center space-x-1 text-sm text-secondary-500 hover:text-primary-600 hover:underline">
+                                      <EnvelopeIcon className="h-3 w-3" />
+                                      <span>{resource.uploader.contactEmail}</span>
+                                    </a>
+                                  )}
+                                  {resource.uploader?.phone && ( // NEW: Display phone
+                                    <a href={`tel:${resource.uploader.phone}`} className="flex items-center space-x-1 text-sm text-secondary-500 hover:text-primary-600 hover:underline">
                                       <Phone className="h-3 w-3" />
-                                      <span>{resource.uploader.contactInfo.phone}</span>
-                                    </div>
+                                      <span>{resource.uploader.phone}</span>
+                                    </a>
                                   )}
                                 </div>
                               </div>
                             </div>
                           </Card>
 
-                          {/* Contact Form - ALWAYS RENDERED */}
-                          <Card className="p-6">
-                            <form onSubmit={handleSubmit(onContactSubmit)} className="space-y-6">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <Input
-                                  label="Your Name"
-                                  placeholder="Enter your name"
-                                  icon={<User className="h-4 w-4" />}
-                                  {...register('name', { required: 'Name is required' })}
-                                  error={errors.name?.message}
-                                />
-                                <Input
-                                  label="Your Email"
-                                  type="email"
-                                  placeholder="Enter your email"
-                                  icon={<Mail className="h-4 w-4" />}
-                                  {...register('email', { required: 'Email is required' })}
-                                  error={errors.email?.message}
-                                />
-                              </div>
-
-                              <Input
-                                label="Subject"
-                                placeholder="What's this about?"
-                                {...register('subject', { required: 'Subject is required' })}
-                                error={errors.subject?.message}
-                              />
-
-                              <div>
-                                <label className="block text-sm font-medium text-black mb-1">
-                                  Message
-                                </label>
-                                <textarea
-                                  {...register('message', { required: 'Message is required' })}
-                                  rows={6}
-                                  className="w-full px-3 py-2 bg-card-500 border border-background-400 rounded-lg text-black placeholder-secondary-400 focus:ring-2 focus:ring-secondary-500 focus:border-transparent resize-none transition-all duration-300"
-                                  placeholder="Write your message here..."
-                                ></textarea>
-                                {errors.message && (
-                                  <p className="text-sm text-error-500 mt-1">{errors.message.message}</p>
-                                )}
-                              </div>
-
-                              {/* Contact Status */}
-                              {contactStatus === 'success' && (
-                                <div className="flex items-center space-x-3 p-4 bg-success-50 border border-success-200 rounded-lg animate-slide-down">
-                                  <div className="w-5 h-5 bg-success-500 rounded-full flex items-center justify-center">
-                                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                    </svg>
-                                  </div>
-                                  <span className="text-sm text-success-700">
-                                    Message sent successfully!
-                                  </span>
-                                </div>
-                              )}
-
-                              {contactStatus === 'error' && (
-                                <div className="flex items-center space-x-3 p-4 bg-error-50 border border-error-200 rounded-lg animate-slide-down">
-                                  <div className="w-5 h-5 bg-error-500 rounded-full flex items-center justify-center">
-                                    <X className="w-3 h-3 text-white" />
-                                  </div>
-                                  <span className="text-sm text-error-700">
-                                    Failed to send message. Please try again.
-                                  </span>
-                                </div>
-                              )}
-
-                              <div className="flex items-center justify-end space-x-4">
-                                <Button variant="ghost" onClick={onClose} type="button">
-                                  Cancel
-                                </Button>
-                                <Button
-                                  type="submit"
-                                  variant="primary"
-                                  loading={isContactLoading}
-                                  className="flex items-center space-x-2"
-                                >
-                                  <Send className="h-4 w-4" />
-                                  <span>Send Message</span>
-                                </Button>
-                              </div>
-                            </form>
-                          </Card>
+                          {/* Conditional rendering for contact form based on allowContact */}
+                          {resource.allowContact ? (
+                            <Card className="p-6 text-center bg-blue-50 border-blue-200">
+                              <p className="text-blue-700 text-sm">
+                                You can contact the contributor using the details above.
+                              </p>
+                            </Card>
+                          ) : (
+                            <Card className="p-6 text-center">
+                              <MessageCircle className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
+                              <p className="text-secondary-600">
+                                This contributor has chosen not to receive direct messages.
+                              </p>
+                            </Card>
+                          )}
                         </div>
                       </div>
                     )}

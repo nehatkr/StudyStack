@@ -32,6 +32,9 @@ model User {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  phone        String? // NEW: Optional phone number for contact
+  contactEmail String? // NEW: Optional email for direct contact (different from login email)
+
   uploadedResources Resource[]
   bookmarks         Bookmark[] // Relation to bookmarks
   activities        Activity[] // Relation to activities
@@ -49,7 +52,7 @@ model Resource {
   semester     String?
   year         Int?       // NEW: Optional year for resources like PYQs
   isPrivate    Boolean    @default(false)
-  allowContact Boolean    @default(true)
+  allowContact Boolean    @default(true) // This controls if any contact info is shown
 
   fileName     String?
   filePath     String?
