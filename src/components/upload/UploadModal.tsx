@@ -35,7 +35,7 @@ interface UploadModalProps {
 }
 
 export const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onUpload, initialResourceType }) => {
-  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<UploadFormData>({
+  const { register, handleSubmit, watch, setValue, reset, formState: { errors, isSubmitting } } = useForm<UploadFormData>({
     defaultValues: {
       resourceType: initialResourceType || 'PDF', // Set initial type
       isPrivate: false,

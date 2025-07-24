@@ -1,47 +1,78 @@
 // project/src/App.tsx
 import React, { useState, useEffect } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { Header } from './components/layout/Header';
-import { Footer } from './components/layout/Footer';
-import { ViewerDashboard } from './components/dashboard/ViewerDashboard';
-import { ContributorDashboard } from './components/dashboard/ContributorDashboard';
-import { ResourceViewModal } from './components/resources/ResourceViewModal';
-import { AuthModal } from './components/auth/AuthModal';
-import { UploadModal } from './components/upload/UploadModal';
-import { PreviousYearPapersPage } from './pages/PreviousYearPapersPage'; // NEW: Import PYQ page
-import { useResources } from './hooks/useResources';
-import { SearchFilters, Resource } from './types';
+import { Header } from './components/layout/Header.tsx'; // Corrected import path
+import { Footer } from './components/layout/Footer.tsx'; // Corrected import path
+import { ViewerDashboard } from './components/dashboard/ViewerDashboard.tsx'; // Corrected import path
+import { ContributorDashboard } from './components/dashboard/ContributorDashboard.tsx'; // Corrected import path
+import { ResourceViewModal } from './components/resources/ResourceViewModal.tsx'; // Corrected import path
+import { UploadModal } from './components/upload/UploadModal.tsx'; // Corrected import path
+import { useResources } from './hooks/useResources.ts'; // Corrected import path
+import { SearchFilters, Resource } from './types/index.ts'; // Corrected import path
+import { useAuth as useClerkAuth } from '@clerk/clerk-react';
+import { PreviousYearPapersPage } from './pages/PreviousYearPapersPage.tsx'; // Corrected import path
 
 const queryClient = new QueryClient();
 
 const AppContent: React.FC = () => {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { getToken: getClerkToken } = useClerkAuth();
+  const reactQueryClient = useQueryClient();
+
   const [filters, setFilters] = useState<SearchFilters>({
     sortBy: 'newest',
   });
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [currentPage, setCurrentPage] = useState<'dashboard' | 'pyq'>('dashboard'); // NEW: State for current page
+  const [currentPage, setCurrentPage] = useState<'dashboard' | 'pyq'>('dashboard');
+  const [uploadModalInitialResourceType, setUploadModalInitialResourceType] = useState<string | undefined>(undefined);
 
-  // Dummy data for analytics and activities for initial render
   const dummyAnalytics = {
     totalUploads: 0, totalViews: 0, totalDownloads: 0, totalBookmarks: 0, topResources: []
   };
   const dummyActivities = [];
   const dummyBookmarks = [];
 
-  const { resources, activities = dummyActivities, bookmarks = dummyBookmarks, analytics = dummyAnalytics, loading, error } = useResources(filters);
+  const { resources, activities = dummyActivities, bookmarks = dummyBookmarks, analytics = dummyAnalytics, loading, error, refetchResources } = useResources(filters);
 
   const handleSearch = (query: string) => {
     setFilters(prev => ({ ...prev, query }));
   };
 
-  const handleUpload = (data: any) => {
+  const handleUploadClick = (initialResourceType?: 'PDF' | 'DOC' | 'DOCX' | 'PPT' | 'PPTX' | 'OTHER' | 'LINK' | 'PYQ' | 'SYLLABUS') => {
+    setUploadModalInitialResourceType(initialResourceType);
+    setIsUploadModalOpen(true);
+  };
+
+  const handleUpload = async (data: any) => {
     console.log('Upload data:', data);
-    // In a real app, this would send data to the API
+    try {
+      const token = await getClerkToken();
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_API_URL}/api/resources`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to upload resource.');
+      }
+
+      const result = await response.json();
+      console.log('Resource uploaded successfully:', result);
+      reactQueryClient.invalidateQueries(['resources']);
+      reactQueryClient.invalidateQueries(['userAnalytics']);
+      reactQueryClient.invalidateQueries(['userActivities']);
+    } catch (error: any) {
+      console.error('Error uploading resource:', error);
+      alert(`Error: ${error.message}`);
+    }
   };
 
   const handleResourceView = (resourceId: string) => {
@@ -49,27 +80,93 @@ const AppContent: React.FC = () => {
     if (resource) {
       setSelectedResource(resource);
       setIsViewModalOpen(true);
+      reactQueryClient.invalidateQueries(['resource', resourceId]);
     }
   };
 
-  const handleResourceDownload = (resourceId: string) => {
-    console.log('Download resource:', resourceId);
-    // In a real app, this would initiate the download
+  const handleResourceDownload = async (resourceId: string) => {
+    if (!isAuthenticated) {
+      alert('Please sign in to download resources.');
+      return;
+    }
+    try {
+      const token = await getClerkToken();
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_API_URL}/api/resources/${resourceId}/download`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to initiate download.');
+      }
+
+      const result = await response.json();
+      console.log('Download initiated:', result.data.downloadUrl);
+      window.open(result.data.downloadUrl, '_blank');
+
+      reactQueryClient.invalidateQueries(['resource', resourceId]);
+      reactQueryClient.invalidateQueries(['resources']);
+
+    } catch (error: any) {
+      console.error('Error downloading resource:', error);
+      alert(`Error: ${error.message}`);
+    }
   };
 
   const handleResourceEdit = (resourceId: string) => {
     console.log('Edit resource:', resourceId);
-    // In a real app, this would open edit modal
   };
 
-  const handleBookmarkToggle = (resourceId: string) => {
-    console.log('Toggle bookmark:', resourceId);
-    // In a real app, this would toggle bookmark status
+  const handleBookmarkToggle = async (resourceId: string) => {
+    if (!isAuthenticated) {
+      alert('Please sign in to bookmark resources.');
+      return;
+    }
+
+    try {
+      const token = await getClerkToken();
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_API_URL}/api/resources/${resourceId}/bookmark`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to toggle bookmark.');
+      }
+
+      const result = await response.json();
+      console.log('Bookmark toggle result:', result);
+
+      reactQueryClient.invalidateQueries(['resource', resourceId]);
+      reactQueryClient.invalidateQueries(['resources']);
+
+      setSelectedResource(prev => {
+        if (prev && prev.id === resourceId) {
+          return {
+            ...prev,
+            isBookmarked: result.data.isBookmarked,
+            bookmarks: result.data.newBookmarkCount,
+          };
+        }
+        return prev;
+      });
+
+    } catch (error: any) {
+      console.error('Error toggling bookmark:', error);
+      alert(`Error: ${error.message}`);
+    }
   };
 
   const handleShare = (resourceId: string) => {
     console.log('Share resource:', resourceId);
-    // In a real app, this would open share modal
   };
 
   const getRelatedResources = (resource: Resource) => {
@@ -77,21 +174,20 @@ const AppContent: React.FC = () => {
       .filter(r =>
         r.id !== resource.id &&
         (r.subject === resource.subject ||
-         r.tags.some(tag => resource.tags.map(t => t.tag.name).includes(tag.tag.name)))
+         r.tags.some(tag => resource.tags.map(t => typeof t === 'string' ? t : t.tag.name).includes(typeof tag === 'string' ? tag : tag.tag.name)))
       )
       .slice(0, 5);
   };
 
-  // Effect to control AuthModal visibility based on authentication status
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      setIsAuthModalOpen(true);
-    } else if (!authLoading && isAuthenticated) {
-      setIsAuthModalOpen(false);
-    }
-  }, [isAuthenticated, authLoading]);
+  const navigateToPyq = () => {
+    setCurrentPage('pyq');
+  };
 
-  // Render a loading state for the entire app while auth is loading
+  const navigateToDashboard = () => {
+    setCurrentPage('dashboard');
+  };
+
+
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background-500">
@@ -105,15 +201,15 @@ const AppContent: React.FC = () => {
     <div className="min-h-screen bg-background-500 animate-fade-in">
       <Header
         onSearch={handleSearch}
-        onUploadClick={isAuthenticated && user?.role === 'contributor' ? () => setIsUploadModalOpen(true) : undefined}
-        onNavigateToPyq={() => setCurrentPage('pyq')} // NEW: Pass navigation function
-        onNavigateToDashboard={() => setCurrentPage('dashboard')} // NEW: Pass navigation function
-        currentPage={currentPage} // NEW: Pass current page for active styling
+        onUploadClick={isAuthenticated && (user?.role === 'contributor' || user?.role === 'admin') ? handleUploadClick : undefined}
+        onNavigateToPyq={navigateToPyq}
+        onNavigateToDashboard={navigateToDashboard}
+        currentPage={currentPage}
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-slide-up">
         {isAuthenticated ? (
-          currentPage === 'dashboard' ? ( // Conditional rendering based on currentPage state
+          currentPage === 'dashboard' ? (
             user?.role === 'viewer' ? (
               <ViewerDashboard
                 resources={resources}
@@ -129,7 +225,7 @@ const AppContent: React.FC = () => {
                 resources={resources.filter(r => r.uploaderId === user.id)}
                 analytics={analytics}
                 loading={loading}
-                onUploadClick={() => setIsUploadModalOpen(true)}
+                onUploadClick={handleUploadClick}
                 onResourceEdit={handleResourceEdit}
               />
             ) : (
@@ -138,9 +234,13 @@ const AppContent: React.FC = () => {
                 <p className="text-secondary-600">You are signed in, but your role is not recognized. Please contact support.</p>
               </div>
             )
-          ) : currentPage === 'pyq' ? ( // Render PYQ page
-            <PreviousYearPapersPage />
-          ) : null // Fallback for unknown page state
+          ) : (
+            <PreviousYearPapersPage
+              onResourceView={handleResourceView}
+              onResourceDownload={handleResourceDownload}
+              onBookmarkToggle={handleBookmarkToggle}
+            />
+          )
         ) : (
           <div className="text-center py-12 animate-scale-in">
             <h2 className="text-2xl font-bold text-black mb-4">Welcome to StudyStack</h2>
@@ -150,11 +250,6 @@ const AppContent: React.FC = () => {
       </main>
 
       <Footer />
-
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-      />
 
       <ResourceViewModal
         isOpen={isViewModalOpen}
@@ -170,6 +265,7 @@ const AppContent: React.FC = () => {
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
         onUpload={handleUpload}
+        initialResourceType={uploadModalInitialResourceType as any}
       />
     </div>
   );

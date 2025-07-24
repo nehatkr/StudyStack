@@ -32,8 +32,8 @@ model User {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  phone        String? // NEW: Optional phone number for contact
-  contactEmail String? // NEW: Optional email for direct contact (different from login email)
+  phone        String? // Optional phone number for contact
+  contactEmail String? // Optional email for direct contact (different from login email)
 
   uploadedResources Resource[]
   bookmarks         Bookmark[] // Relation to bookmarks
@@ -44,38 +44,42 @@ model User {
 
 // Resource Model
 model Resource {
-  id           String     @id @default(uuid())
-  title        String
-  description  String
-  subject      String
-  resourceType String     // e.g., 'PDF', 'DOC', 'PYQ', 'LINK'
-  semester     String?
-  year         Int?       // NEW: Optional year for resources like PYQs
-  isPrivate    Boolean    @default(false)
-  allowContact Boolean    @default(true) // This controls if any contact info is shown
+  id                 String     @id @default(uuid())
+  title              String
+  description        String
+  subject            String
+  resourceType       String     // e.g., 'PDF', 'DOC', 'PYQ', 'LINK', 'SYLLABUS'
+  semester           String?
+  year               Int?       // Optional year for resources like PYQs
+  isPrivate          Boolean    @default(false)
+  allowContact       Boolean    @default(true) // This controls if any contact info is shown
 
-  fileName     String?
-  filePath     String?
-  fileSize     Int?
-  mimeType     String?
+  fileName           String?
+  filePath           String?
+  fileSize           Int?
+  mimeType           String?
 
-  url          String?
-  isExternal   Boolean    @default(false)
+  url                String?
+  isExternal         Boolean    @default(false)
 
-  views        Int        @default(0)
-  downloads    Int        @default(0)
-  bookmarks    Int        @default(0) // Total count of bookmarks for this resource
-  version      Int        @default(1)
+  youtubeChannelName String?    // YouTube Channel Name
+  youtubeVideoLink   String?    // YouTube Video Link
+  websiteLink        String?    // General Website Link
 
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  views              Int        @default(0)
+  downloads          Int        @default(0)
+  bookmarks          Int        @default(0) // Total count of bookmarks for this resource
+  version            Int        @default(1)
 
-  uploaderId   String
-  uploader     User       @relation(fields: [uploaderId], references: [id])
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
-  tags         ResourceTag[]
-  bookmarkedBy Bookmark[] // Relation to users who bookmarked this resource
-  activities   Activity[] // Relation to activities related to this resource
+  uploaderId         String
+  uploader           User       @relation(fields: [uploaderId], references: [id])
+
+  tags               ResourceTag[]
+  bookmarkedBy       Bookmark[] // Relation to users who bookmarked this resource
+  activities         Activity[] // Relation to activities related to this resource
 
   @@map("resources")
 }
