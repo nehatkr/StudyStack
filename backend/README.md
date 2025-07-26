@@ -49,7 +49,7 @@ A secure and scalable backend API for StudyStack, a resource-sharing platform fo
    ```env
    DATABASE_URL="postgresql://username:password@localhost:5432/studystack_db"
    JWT_SECRET=your_super_secret_jwt_key_here
-   PORT=5000
+   PORT=5001
    NODE_ENV=development
    ```
 
@@ -82,13 +82,13 @@ npm run dev
 npm start
 ```
 
-The API will be available at `http://localhost:5000`
+The API will be available at `http://localhost:5001`
 
 ## 📚 API Documentation
 
 ### Base URL
 ```
-http://localhost:5000/api
+http://localhost:5001/api
 ```
 
 ### Authentication
@@ -316,7 +316,7 @@ COPY package*.json ./
 RUN npm ci --only=production
 COPY . .
 RUN npx prisma generate
-EXPOSE 5000
+EXPOSE 5001
 CMD ["npm", "start"]
 ```
 

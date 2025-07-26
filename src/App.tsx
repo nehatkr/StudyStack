@@ -1,17 +1,17 @@
 // project/src/App.tsx
 import React, { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { Header } from './components/layout/Header.tsx'; // Corrected import path
-import { Footer } from './components/layout/Footer.tsx'; // Corrected import path
-import { ViewerDashboard } from './components/dashboard/ViewerDashboard.tsx'; // Corrected import path
-import { ContributorDashboard } from './components/dashboard/ContributorDashboard.tsx'; // Corrected import path
-import { ResourceViewModal } from './components/resources/ResourceViewModal.tsx'; // Corrected import path
-import { UploadModal } from './components/upload/UploadModal.tsx'; // Corrected import path
-import { useResources } from './hooks/useResources.ts'; // Corrected import path
-import { SearchFilters, Resource } from './types/index.ts'; // Corrected import path
+import { AuthProvider, useAuth } from './contexts/AuthContext.tsx'; // Ensure .tsx extension
+import { Header } from './components/layout/Header.tsx';
+import { Footer } from './components/layout/Footer.tsx';
+import { ViewerDashboard } from './components/dashboard/ViewerDashboard.tsx';
+import { ContributorDashboard } from './components/dashboard/ContributorDashboard.tsx';
+import { ResourceViewModal } from './components/resources/ResourceViewModal.tsx';
+import { UploadModal } from './components/upload/UploadModal.tsx';
+import { useResources } from './hooks/useResources.ts';
+import { SearchFilters, Resource } from './types/index.ts';
 import { useAuth as useClerkAuth } from '@clerk/clerk-react';
-import { PreviousYearPapersPage } from './pages/PreviousYearPapersPage.tsx'; // Corrected import path
+import { PreviousYearPapersPage } from './pages/PreviousYearPapersPage.tsx';
 
 const queryClient = new QueryClient();
 
@@ -47,14 +47,14 @@ const AppContent: React.FC = () => {
   };
 
   const handleUpload = async (data: any) => {
-    console.log('Upload data:', data);
+    console.log('Upload data sent to backend:', data);
     try {
-      const token = await getClerkToken();
+      const token = await getClerkToken(); // This is Clerk's token, used for your backend API
       const response = await fetch(`${import.meta.env.VITE_BACKEND_API_URL}/api/resources`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${token}`, // Send Clerk token for your backend to verify
         },
         body: JSON.stringify(data),
       });
@@ -65,7 +65,7 @@ const AppContent: React.FC = () => {
       }
 
       const result = await response.json();
-      console.log('Resource uploaded successfully:', result);
+      console.log('Resource uploaded successfully, backend response:', result);
       reactQueryClient.invalidateQueries(['resources']);
       reactQueryClient.invalidateQueries(['userAnalytics']);
       reactQueryClient.invalidateQueries(['userActivities']);
