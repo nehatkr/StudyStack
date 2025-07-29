@@ -5,7 +5,8 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-
+import { clerkClient, ClerkExpressRequireAuth } from "@clerk/clerk-sdk-node";
+import { createClient } from "@supabase/supabase-js";
 
 // backend/server.js
 // This is the main entry point for your Express backend application.
@@ -13,13 +14,13 @@ const prisma = new PrismaClient();
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors'; // Import cors for cross-origin requests
-import resourceRoutes from './src/routes/resourceRoutes.js'; // Import resource routes
+import { Router } from 'express';
 
 // Load environment variables from .env file
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000; // Use port from environment or default to 5000
+const PORT = process.env.PORT || 5001; // Use port from environment or default to 5001
 
 // Middleware
 app.use(cors()); // Enable CORS for all routes, adjust as needed for production
@@ -27,11 +28,160 @@ app.use(express.json()); // Parse JSON request bodies
 
 // Routes
 // Mount the resource routes under the /api/resources path
-app.use('/api/resources', resourceRoutes);
+// app.use('/api/resources', resourceRoutes);
 
 // Basic route for testing server status
 app.get('/', (req, res) => {
   res.send('StudyStack Backend API is running!');
+});
+
+
+// Initialize Supabase Admin client
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  {
+    auth: {
+      persistSession: false,
+    },
+  }
+);
+
+// --- NEW SUPABASE AUTH ENDPOINT ---
+app.post("/api/auth/supabase-token", async (req, res) => {
+  const { clerkToken } = req.body;
+
+  if (!clerkToken) {
+    return res.status(400).json({ message: "Clerk token is required." });
+  }
+
+  try {
+    const [header, payload, signature] = clerkToken.split(".");
+    const decodedPayload = JSON.parse(
+      Buffer.from(payload, "base64").toString()
+    );
+        const clerkUserId = decodedPayload.sub;
+        console.log(`Decoded Clerk User ID: ${clerkUserId}`);
+
+
+    if (!clerkUserId) {
+      return res
+        .status(401)
+        .json({ message: "Invalid Clerk token: User ID not found." });
+    }
+
+    let dbUser = await prisma.user.findUnique({
+      where: { clerkId: clerkUserId },
+    });
+
+    // if (!dbUser) {
+    //  const clerkUser = await clerkClient.users.getUser(clerkUserId);
+      
+    //   dbUser = await prisma.user.create({
+    //     data: {
+    //       clerkId: clerkUserId,
+    //       email:
+    //         clerkUser.emailAddresses[0]?.emailAddress || "unknown@example.com",
+    //       name:
+    //         clerkUser.firstName ||
+    //         clerkUser.emailAddresses[0]?.emailAddress.split("@")[0] ||
+    //         "New User",
+    //       role: "VIEWER",
+    //       isVerified:
+    //         clerkUser.emailAddresses[0]?.verification.status === "verified",
+    //     },
+    //   });
+    // }
+
+    // const {
+    //   data: { user: supabaseAuthUser },
+    //   error: signInError,
+    // } = await supabaseAdmin.auth.signInWithIdToken({
+    //   provider: "clerk",
+    //   token: clerkToken,
+    // });
+
+    if (!dbUser) {
+      console.log(`User with clerkId ${clerkUserId} not found in custom DB. Attempting to create new user.`);
+      // Fetch full Clerk user details using the Clerk SDK
+      const clerkUser = await clerkClient.users.getUser(clerkUserId);
+      console.log('Fetched Clerk User details:', {
+        id: clerkUser.id,
+        emailAddresses: clerkUser.emailAddresses,
+        firstName: clerkUser.firstName,
+        lastName: clerkUser.lastName,
+        username: clerkUser.username
+      });
+
+      // Safely access email and verification status
+      const primaryEmailObject = clerkUser.emailAddresses?.[0];
+      const emailAddress = primaryEmailObject?.emailAddress || 'unknown@example.com';
+      const isEmailVerified = primaryEmailObject?.verification?.status === 'verified';
+      const userName = clerkUser.firstName || primaryEmailObject?.emailAddress?.split('@')[0] || 'New User';
+
+      dbUser = await prisma.user.create({
+        data: {
+          clerkId: clerkUserId,
+          email: emailAddress,
+          name: userName,
+          role: 'VIEWER', // Default role for new users
+          isVerified: isEmailVerified,
+        },
+      });
+      console.log('New user created in Prisma DB:', dbUser.id);
+    } else {
+      console.log('User found in Prisma DB:', dbUser.id);
+    }
+
+    const { data: { user: supabaseAuthUser }, error: signInError } = await supabaseAdmin.auth.signInWithIdToken({
+      provider: 'clerk',
+      token: clerkToken,
+    });
+
+    if (signInError) {
+      console.error("Supabase signInWithIdToken error:", signInError);
+      return res
+        .status(500)
+        .json({
+          message: "Failed to authenticate with Supabase.",
+          error: signInError.message,
+        });
+    }
+
+    if (!supabaseAuthUser || !supabaseAuthUser.jwt) {
+      return res
+        .status(500)
+        .json({ message: "Supabase did not return a JWT." });
+    }
+    console.log('Successfully authenticated with Supabase. Supabase User ID:', supabaseAuthUser.id);
+
+    res.json({
+      success: true,
+      supabaseToken: supabaseAuthUser.jwt,
+      dbUser: {
+        id: dbUser.id,
+        clerkId: dbUser.clerkId,
+        email: dbUser.email,
+        name: dbUser.name,
+        role: dbUser.role,
+        institution: dbUser.institution,
+        bio: dbUser.bio,
+        phone: dbUser.phone,
+        contactEmail: dbUser.contactEmail,
+        isVerified: dbUser.isVerified,
+        createdAt: dbUser.createdAt,
+        lastLogin: dbUser.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Error exchanging Clerk token for Supabase token:", error);
+    res
+      .status(500)
+      .json({
+        message: "Internal server error during token exchange.",
+        error: error.message,
+      });
+  }
 });
 
 // Start the server
@@ -43,10 +193,7 @@ app.listen(PORT, () => {
 // backend/src/routes/resourceRoutes.js
 // This file defines the API routes for managing resources.
 
-import { Router } from 'express';
-import prisma from '../../prismaClient.js'; // Import the Prisma client
-
-const router = Router();
+const  router = Router();
 
 /**
  * @route POST /api/resources
