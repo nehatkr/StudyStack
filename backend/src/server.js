@@ -1,36 +1,38 @@
-// backend/server.js
-// This is the main entry point for your Express backend application.
-
-import express from 'express';
-import dotenv from 'dotenv';
-import cors from 'cors'; // Import cors for cross-origin requests
-import resourceRoutes from './src/routes/resourceRoutes.js'; // Import resource routes
-// Import the unified authentication and authorization middlewares
-import { authMiddleware, requireDbUserAndAuthorize } from './src/middleware/authMiddleware.js';
+// backend/src/server.js
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import { ClerkExpressRequireAuth } from '@clerk/clerk-sdk-node';
 
 // Load environment variables from .env file
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000; // Use port from environment or default to 5000
+const PORT = process.env.PORT || 5001;
 
 // Middleware
-app.use(cors()); // Enable CORS for all routes, adjust as needed for production
-app.use(express.json()); // Parse JSON request bodies
+app.use(cors());
+app.use(express.json());
 
-// Routes
-// Apply Clerk's authMiddleware to the /api/resources router.
-// The resourceRoutes.js file will then apply requireDbUserAndAuthorize
-// and checkResourceOwnership to specific routes as needed.
-app.use('/api/resources', authMiddleware, resourceRoutes);
+// --- END NEW SUPABASE AUTH ENDPOINT ---
 
-// Basic route for testing server status (no authentication needed here)
-app.get('/', (req, res) => {
-  res.send('StudyStack Backend API is running!');
-});
+// Reverted to simple relative paths, assuming 'type: module' in package.json
+// and Node.js correctly resolves relative to the current file (server.js in src/)
+import resourceRoutes from "./routes/resourceRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
+// import { authMiddleware } from './middleware/authMiddleware.js';
 
-// Start the server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Access the API at http://localhost:${PORT}`);
+// Apply Clerk authentication middleware to routes that require it
+app.use("/api/resources", ClerkExpressRequireAuth(), resourceRoutes);
+app.use("/api/users", ClerkExpressRequireAuth(), userRoutes);
+
+// Error handling middleware for Clerk
+app.use((err, req, res, next) => {
+  if (err.name === "ClerkExpressRequireAuthError") {
+    console.error("Clerk Auth Error:", err);
+    return res
+      .status(401)
+      .json({ message: "Unauthorized: Authentication required." });
+  }
+  next(err);
 });
