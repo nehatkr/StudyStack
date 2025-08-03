@@ -28,7 +28,7 @@ export const validateResourceCreation = [
 
   body('description')
     .trim()
-    .isLength({ min: 50, max: 500 })
+    .isLength({ min: 5, max: 500 })
     .withMessage('Description must be between 50 and 500 characters')
     .escape(),
 
@@ -139,7 +139,7 @@ export const validateResourceUpdate = [
   body('description')
     .optional()
     .trim()
-    .isLength({ min: 50, max: 500 })
+    .isLength({ min: 5, max: 500 })
     .withMessage('Description must be between 50 and 500 characters')
     .escape(),
 

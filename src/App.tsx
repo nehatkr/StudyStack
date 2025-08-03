@@ -1,7 +1,7 @@
 // project/src/App.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
-import { AuthProvider, useAuth } from './contexts/AuthContext.tsx'; // Ensure .tsx extension
+import { AuthProvider, useAuth } from './contexts/AuthContext.tsx';
 import { Header } from './components/layout/Header.tsx';
 import { Footer } from './components/layout/Footer.tsx';
 import { ViewerDashboard } from './components/dashboard/ViewerDashboard.tsx';
@@ -49,12 +49,14 @@ const AppContent: React.FC = () => {
   const handleUpload = async (data: any) => {
     console.log('Upload data sent to backend:', data);
     try {
-      const token = await getClerkToken(); // This is Clerk's token, used for your backend API
+      const token = await getClerkToken();
+      console.log("Token: ", token);
+      
       const response = await fetch(`${import.meta.env.VITE_BACKEND_API_URL}/api/resources`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`, // Send Clerk token for your backend to verify
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify(data),
       });
@@ -174,7 +176,7 @@ const AppContent: React.FC = () => {
       .filter(r =>
         r.id !== resource.id &&
         (r.subject === resource.subject ||
-         r.tags.some(tag => resource.tags.map(t => typeof t === 'string' ? t : t.tag.name).includes(typeof tag === 'string' ? tag : tag.tag.name)))
+          r.tags.some(tag => resource.tags.map(t => typeof t === 'string' ? t : t.tag.name).includes(typeof tag === 'string' ? tag : tag.tag.name)))
       )
       .slice(0, 5);
   };
@@ -187,7 +189,6 @@ const AppContent: React.FC = () => {
     setCurrentPage('dashboard');
   };
 
-
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background-500">
@@ -197,6 +198,49 @@ const AppContent: React.FC = () => {
     );
   }
 
+  let mainContent;
+  if (currentPage === 'pyq') {
+    mainContent = (
+      <PreviousYearPapersPage
+        onResourceView={handleResourceView}
+        onResourceDownload={handleResourceDownload}
+        onBookmarkToggle={handleBookmarkToggle}
+      />
+    );
+  } else if (isAuthenticated) {
+    if (user?.role === 'contributor' || user?.role === 'admin') {
+      mainContent = (
+        <ContributorDashboard
+          resources={resources.filter(r => r.uploaderId === user.id)}
+          analytics={analytics}
+          loading={loading}
+          onUploadClick={handleUploadClick}
+          onResourceEdit={handleResourceEdit}
+        />
+      );
+    } else { // Default to ViewerDashboard for 'viewer' and any unrecognized roles
+      mainContent = (
+        <ViewerDashboard
+          resources={resources}
+          activities={activities}
+          bookmarks={bookmarks}
+          loading={loading}
+          onResourceView={handleResourceView}
+          onResourceDownload={handleResourceDownload}
+          onBookmarkToggle={handleBookmarkToggle}
+        />
+      );
+    }
+  } else {
+    mainContent = (
+      <div className="text-center py-12 animate-scale-in">
+        <h2 className="text-2xl font-bold text-black mb-4">Welcome to StudyStack</h2>
+        <p className="text-secondary-600">Please sign in to access your dashboard</p>
+      </div>
+    );
+  }
+ console.log(user);
+ 
   return (
     <div className="min-h-screen bg-background-500 animate-fade-in">
       <Header
@@ -208,45 +252,7 @@ const AppContent: React.FC = () => {
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-slide-up">
-        {isAuthenticated ? (
-          currentPage === 'dashboard' ? (
-            user?.role === 'viewer' ? (
-              <ViewerDashboard
-                resources={resources}
-                activities={activities}
-                bookmarks={bookmarks}
-                loading={loading}
-                onResourceView={handleResourceView}
-                onResourceDownload={handleResourceDownload}
-                onBookmarkToggle={handleBookmarkToggle}
-              />
-            ) : user?.role === 'contributor' || user?.role === 'admin' ? (
-              <ContributorDashboard
-                resources={resources.filter(r => r.uploaderId === user.id)}
-                analytics={analytics}
-                loading={loading}
-                onUploadClick={handleUploadClick}
-                onResourceEdit={handleResourceEdit}
-              />
-            ) : (
-              <div className="text-center py-12 animate-scale-in">
-                <h2 className="text-2xl font-bold text-black mb-4">Welcome to StudyStack</h2>
-                <p className="text-secondary-600">You are signed in, but your role is not recognized. Please contact support.</p>
-              </div>
-            )
-          ) : (
-            <PreviousYearPapersPage
-              onResourceView={handleResourceView}
-              onResourceDownload={handleResourceDownload}
-              onBookmarkToggle={handleBookmarkToggle}
-            />
-          )
-        ) : (
-          <div className="text-center py-12 animate-scale-in">
-            <h2 className="text-2xl font-bold text-black mb-4">Welcome to StudyStack</h2>
-            <p className="text-secondary-600">Please sign in to access your dashboard</p>
-          </div>
-        )}
+        {mainContent}
       </main>
 
       <Footer />

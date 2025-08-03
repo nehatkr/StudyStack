@@ -90,7 +90,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             auth: {
               // Crucial: Tell the Supabase client to not manage its own session.
               // Clerk is the source of truth for the user's session.
-              persistSession: false,
+              persistSession: true,
             },
           });
           setSupabase(newSupabaseClient); // Store the new client instance
@@ -117,10 +117,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             id: clerkUser.id,
             name: clerkUser.fullName || clerkUser.emailAddresses[0]?.emailAddress || 'User',
             email: clerkUser.emailAddresses[0]?.emailAddress || 'N/A',
-            role: dbUser?.role || 'viewer', // Default role if not found in DB
+            role: clerkUser?.unsafeMetadata?.role || 'viewer', // Default role if not found in DB
             avatar: clerkUser.imageUrl,
-            institution: dbUser?.institution,
-            bio: dbUser?.bio,
+            institution: clerkUser?.unsafeMetadata?.institution,
+            bio: clerkUser?.unsafeMetadata?.bio,
             phone: dbUser?.phone,
             contactEmail: dbUser?.contactEmail,
             isVerified: dbUser?.is_verified ?? false,
@@ -151,7 +151,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     setupSupabaseClient();
-  }, [clerkUser, isClerkUserLoaded, isClerkSessionLoaded, session, getClerkToken]);
+  }, [isClerkUserLoaded, isClerkSessionLoaded, getClerkToken]);
 
   return (
     <AuthContext.Provider value={{ user, isLoading, isAuthenticated, supabase }}>
