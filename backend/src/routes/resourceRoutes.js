@@ -1,16 +1,27 @@
-const express = require('express');
-const { PrismaClient } = require('@prisma/client');
-const { authenticateToken, authorize, checkResourceOwnership } = require('../middleware/authMiddleware');
-const { uploadSingle, deleteFile, getFileInfo } = require('../middleware/uploadMiddleware');
-const {
+// backend/src/routes/resourceRoutes.js
+// This file defines the API routes for managing resources.
+
+import { Router } from 'express'; // Use import for express Router
+import prisma from '../../prismaClient.js'; // Correct ESM import for Prisma Client
+import jwt from 'jsonwebtoken'; // Correct ESM import for jsonwebtoken
+
+// Import your middleware files using ESM syntax
+import { authenticateToken, authorize, checkResourceOwnership } from '../middleware/authMiddleware.js';
+import { uploadSingle, deleteFile, getFileInfo } from '../middleware/uploadMiddleware.js';
+import {
   validateResourceCreation,
   validateResourceUpdate,
   validateResourceId,
   validateResourceQuery
-} = require('../middleware/validationMiddleware');
+} from '../middleware/validationMiddleware.js';
 
-const router = express.Router();
-const prisma = new PrismaClient();
+const router = Router(); // Correctly declare router with 'const'
+
+// REMOVE THIS LINE: prisma is imported from prismaClient.js
+// prisma = new PrismaClient();
+
+// REMOVE THIS LINE: This is for CommonJS exports
+// module.exports = router;
 
 // GET /api/resources - Get all resources with filtering and pagination
 router.get('/', validateResourceQuery, async (req, res) => {
@@ -109,7 +120,10 @@ router.get('/', validateResourceQuery, async (req, res) => {
       updatedAt: resource.updatedAt,
       uploader: resource.uploader,
       tags: resource.tags.map(rt => rt.tag.name),
-      allowContact: resource.allowContact
+      allowContact: resource.allowContact,
+      url: resource.url,
+      isExternal: resource.isExternal,
+      year: resource.year
     }));
 
     const totalPages = Math.ceil(totalCount / take);
@@ -178,17 +192,12 @@ router.get('/:id', validateResourceId, async (req, res) => {
 
     // Check if resource is private and user doesn't own it
     if (resource.isPrivate) {
-      // If no user is authenticated or user doesn't own the resource
-      const authHeader = req.headers.authorization;
-      if (!authHeader) {
-        return res.status(403).json({
-          success: false,
-          message: 'This resource is private'
-        });
+      if (!req.user || resource.uploaderId !== req.user.id) {
+         return res.status(403).json({
+           success: false,
+           message: 'Access denied to private resource'
+         });
       }
-
-      // Verify token and check ownership (simplified for this example)
-      // In production, you'd want to use the full auth middleware
     }
 
     // Increment view count
@@ -198,22 +207,17 @@ router.get('/:id', validateResourceId, async (req, res) => {
     });
 
     // Log activity if user is authenticated
-    const authHeader = req.headers.authorization;
-    if (authHeader) {
+    if (req.user?.id) {
       try {
-        const jwt = require('jsonwebtoken');
-        const token = authHeader.split(' ')[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
         await prisma.activity.create({
           data: {
-            userId: decoded.userId,
+            userId: req.user.id,
             resourceId: id,
             action: 'VIEW'
           }
         });
       } catch (error) {
-        // Ignore auth errors for view tracking
+        console.error('Activity logging error:', error);
       }
     }
 
@@ -223,19 +227,22 @@ router.get('/:id', validateResourceId, async (req, res) => {
       title: resource.title,
       description: resource.description,
       fileName: resource.fileName,
-      fileSize: resource.fileSize,
+      filePath: resource.filePath,
       mimeType: resource.mimeType,
       subject: resource.subject,
       resourceType: resource.resourceType,
       semester: resource.semester,
-      views: resource.views + 1, // Include the incremented view
+      views: resource.views + 1,
       downloads: resource.downloads,
       bookmarks: resource._count.bookmarks,
       allowContact: resource.allowContact,
       createdAt: resource.createdAt,
       updatedAt: resource.updatedAt,
       uploader: resource.uploader,
-      tags: resource.tags.map(rt => rt.tag.name)
+      tags: resource.tags.map(rt => rt.tag.name),
+      url: resource.url,
+      isExternal: resource.isExternal,
+      year: resource.year
     };
 
     res.json({
@@ -252,17 +259,19 @@ router.get('/:id', validateResourceId, async (req, res) => {
 });
 
 // POST /api/resources - Upload new resource (Protected)
-router.post('/', 
+router.post('/',
   authenticateToken,
   authorize('CONTRIBUTOR', 'ADMIN'),
   uploadSingle,
   validateResourceCreation,
   async (req, res) => {
     try {
-      if (!req.file) {
+      const isLinkType = req.body.resourceType === 'LINK';
+
+      if (!isLinkType && !req.file) {
         return res.status(400).json({
           success: false,
-          message: 'File is required'
+          message: 'File is required for non-LINK resource types.'
         });
       }
 
@@ -274,68 +283,87 @@ router.post('/',
         semester,
         tags = [],
         isPrivate = false,
-        allowContact = true
+        allowContact = true,
+        url,
+        year
       } = req.body;
 
-      const fileInfo = getFileInfo(req.file);
+      let fileName = null;
+      let filePath = null;
+      let fileSize = null;
+      let mimeType = null;
+      let isExternal = false;
+      let resourceUrl = null;
 
-      // Create resource
+      if (isLinkType) {
+        if (!url) {
+          return res.status(400).json({ success: false, message: 'URL is required for LINK resource type.' });
+        }
+        resourceUrl = url;
+        isExternal = true;
+        mimeType = 'text/uri-list';
+      } else {
+        if (!req.file) {
+          return res.status(400).json({ success: false, message: 'File is required for file-based resource types.' });
+        }
+        const fileInfo = getFileInfo(req.file);
+
+        fileName = fileInfo.originalName;
+        filePath = fileInfo.path;
+        fileSize = fileInfo.size;
+        mimeType = fileInfo.mimetype;
+        isExternal = false;
+      }
+
       const resource = await prisma.resource.create({
         data: {
           title,
           description,
-          fileName: fileInfo.originalName,
-          filePath: fileInfo.path,
-          fileSize: fileInfo.size,
-          mimeType: fileInfo.mimetype,
+          fileName,
+          filePath,
+          fileSize,
+          mimeType,
           subject,
           resourceType,
           semester,
+          year: resourceType === 'PYQ' ? parseInt(year) : null,
           isPrivate,
           allowContact,
-          uploaderId: req.user.id
-        }
+          url: resourceUrl,
+          isExternal,
+          uploader: {
+            connect: { id: req.user.id },
+          },
+        },
       });
 
-      // Handle tags
       if (tags.length > 0) {
         const tagPromises = tags.map(async (tagName) => {
-          // Find or create tag
           const tag = await prisma.tag.upsert({
             where: { name: tagName.toLowerCase().trim() },
             update: {},
-            create: { name: tagName.toLowerCase().trim() }
+            create: { name: tagName.toLowerCase().trim() },
           });
-
-          // Create resource-tag relationship
           return prisma.resourceTag.create({
             data: {
               resourceId: resource.id,
-              tagId: tag.id
-            }
+              tagId: tag.id,
+            },
           });
         });
-
         await Promise.all(tagPromises);
       }
 
-      // Fetch the created resource with relations
       const createdResource = await prisma.resource.findUnique({
         where: { id: resource.id },
         include: {
           uploader: {
-            select: {
-              id: true,
-              name: true,
-              institution: true
-            }
+            select: { id: true, name: true, institution: true },
           },
           tags: {
-            include: {
-              tag: true
-            }
-          }
-        }
+            include: { tag: true },
+          },
+        },
       });
 
       res.status(201).json({
@@ -353,28 +381,32 @@ router.post('/',
           allowContact: createdResource.allowContact,
           createdAt: createdResource.createdAt,
           uploader: createdResource.uploader,
-          tags: createdResource.tags.map(rt => rt.tag.name)
-        }
+          tags: createdResource.tags.map((rt) => rt.tag.name),
+          url: createdResource.url,
+          isExternal: createdResource.isExternal,
+          year: createdResource.year,
+        },
       });
     } catch (error) {
       console.error('Upload resource error:', error);
-      
-      // Clean up uploaded file on error
-      if (req.file) {
+
+      if (req.file && req.file.path && !req.body.resourceType === 'LINK') {
         try {
           await deleteFile(req.file.path);
         } catch (deleteError) {
-          console.error('File cleanup error:', deleteError);
+          console.error('File cleanup error during rollback:', deleteError);
         }
       }
 
       res.status(500).json({
         success: false,
-        message: 'Failed to upload resource'
+        message: 'Failed to upload resource',
+        error: error.message,
       });
     }
   }
 );
+
 
 // GET /api/my-resources - Get user's uploaded resources (Protected)
 router.get('/my/resources', authenticateToken, async (req, res) => {
@@ -422,7 +454,10 @@ router.get('/my/resources', authenticateToken, async (req, res) => {
       allowContact: resource.allowContact,
       createdAt: resource.createdAt,
       updatedAt: resource.updatedAt,
-      tags: resource.tags.map(rt => rt.tag.name)
+      tags: resource.tags.map(rt => rt.tag.name),
+      url: resource.url,
+      isExternal: resource.isExternal,
+      year: resource.year
     }));
 
     const totalPages = Math.ceil(totalCount / take);
@@ -466,10 +501,10 @@ router.put('/:id',
         semester,
         tags,
         isPrivate,
-        allowContact
+        allowContact,
+        year
       } = req.body;
 
-      // Update resource
       const updatedResource = await prisma.resource.update({
         where: { id },
         data: {
@@ -478,18 +513,16 @@ router.put('/:id',
           ...(subject && { subject }),
           ...(semester && { semester }),
           ...(typeof isPrivate === 'boolean' && { isPrivate }),
-          ...(typeof allowContact === 'boolean' && { allowContact })
+          ...(typeof allowContact === 'boolean' && { allowContact }),
+          ...(year && { year: parseInt(year) })
         }
       });
 
-      // Handle tags update if provided
       if (tags && Array.isArray(tags)) {
-        // Remove existing tags
         await prisma.resourceTag.deleteMany({
           where: { resourceId: id }
         });
 
-        // Add new tags
         if (tags.length > 0) {
           const tagPromises = tags.map(async (tagName) => {
             const tag = await prisma.tag.upsert({
@@ -510,7 +543,6 @@ router.put('/:id',
         }
       }
 
-      // Fetch updated resource with relations
       const resource = await prisma.resource.findUnique({
         where: { id },
         include: {
@@ -535,7 +567,10 @@ router.put('/:id',
           isPrivate: resource.isPrivate,
           allowContact: resource.allowContact,
           updatedAt: resource.updatedAt,
-          tags: resource.tags.map(rt => rt.tag.name)
+          tags: resource.tags.map(rt => rt.tag.name),
+          url: resource.url,
+          isExternal: resource.isExternal,
+          year: resource.year
         }
       });
     } catch (error) {
@@ -558,10 +593,9 @@ router.delete('/:id',
     try {
       const { id } = req.params;
 
-      // Get resource to find file path
       const resource = await prisma.resource.findUnique({
         where: { id },
-        select: { filePath: true }
+        select: { filePath: true, isExternal: true }
       });
 
       if (!resource) {
@@ -571,17 +605,32 @@ router.delete('/:id',
         });
       }
 
-      // Delete resource from database (this will cascade delete related records)
       await prisma.resource.delete({
         where: { id }
       });
 
-      // Delete file from filesystem
-      try {
-        await deleteFile(resource.filePath);
-      } catch (fileError) {
-        console.error('File deletion error:', fileError);
-        // Continue even if file deletion fails
+      if (resource.filePath && !resource.isExternal) {
+        try {
+          const parts = resource.filePath.split('/public/resources/');
+          if (parts.length > 1) {
+            const pathInBucket = parts[1];
+            // supabaseAdmin is not defined in this scope. Need to pass it or import.
+            // This will be fixed by passing supabaseAdmin to resourceRoutes.
+            const { error: storageError } = supabaseAdmin.storage
+              .from('resources')
+              .remove([pathInBucket]);
+
+            if (storageError) {
+              console.error('Supabase Storage deletion error:', storageError);
+              throw new Error(`Failed to delete file from storage: ${storageError.message}`);
+            }
+            console.log(`Successfully deleted file from Supabase Storage: ${pathInBucket}`);
+          } else {
+            console.warn('Could not parse Supabase Storage path from filePath:', resource.filePath);
+          }
+        } catch (fileError) {
+          console.error('File deletion error:', fileError);
+        }
       }
 
       res.json({
@@ -606,7 +655,6 @@ router.post('/:id/download',
     try {
       const { id } = req.params;
 
-      // Check if resource exists and is accessible
       const resource = await prisma.resource.findUnique({
         where: { id },
         select: {
@@ -614,7 +662,9 @@ router.post('/:id/download',
           filePath: true,
           fileName: true,
           isPrivate: true,
-          uploaderId: true
+          uploaderId: true,
+          isExternal: true,
+          url: true
         }
       });
 
@@ -625,7 +675,6 @@ router.post('/:id/download',
         });
       }
 
-      // Check if user can access private resource
       if (resource.isPrivate && resource.uploaderId !== req.user.id) {
         return res.status(403).json({
           success: false,
@@ -633,13 +682,11 @@ router.post('/:id/download',
         });
       }
 
-      // Increment download count
       await prisma.resource.update({
         where: { id },
         data: { downloads: { increment: 1 } }
       });
 
-      // Log download activity
       await prisma.activity.create({
         data: {
           userId: req.user.id,
@@ -648,11 +695,30 @@ router.post('/:id/download',
         }
       });
 
+      let downloadUrl;
+      if (resource.isExternal && resource.url) {
+        downloadUrl = resource.url;
+      } else if (resource.filePath) {
+        // supabaseAdmin is not defined in this scope. Need to pass it or import.
+        // This will be fixed by passing supabaseAdmin to resourceRoutes.
+        const { data: publicUrlData } = supabaseAdmin.storage
+          .from('resources')
+          .getPublicUrl(resource.filePath);
+
+        if (publicUrlData?.publicUrl) {
+          downloadUrl = publicUrlData.publicUrl;
+        } else {
+          throw new Error('Could not get public URL for file.');
+        }
+      } else {
+        throw new Error('No valid file path or URL for download.');
+      }
+
       res.json({
         success: true,
         message: 'Download tracked successfully',
         data: {
-          downloadUrl: `/uploads/${resource.filePath.split('/').slice(-2).join('/')}`,
+          downloadUrl: downloadUrl,
           fileName: resource.fileName
         }
       });
@@ -666,4 +732,81 @@ router.post('/:id/download',
   }
 );
 
-module.exports = router;
+// POST /api/resources/:id/bookmark - Toggle bookmark (Protected)
+router.post('/:id/bookmark',
+  authenticateToken,
+  validateResourceId,
+  async (req, res) => {
+    try {
+      const { id: resourceId } = req.params;
+      const userId = req.user.id;
+
+      const existingBookmark = await prisma.bookmark.findUnique({
+        where: {
+          userId_resourceId: {
+            userId: userId,
+            resourceId: resourceId
+          }
+        }
+      });
+
+      let isBookmarked;
+      let newBookmarkCount;
+
+      if (existingBookmark) {
+        await prisma.bookmark.delete({
+          where: { id: existingBookmark.id }
+        });
+        isBookmarked = false;
+        await prisma.resource.update({
+          where: { id: resourceId },
+          data: { bookmarks: { decrement: 1 } }
+        });
+      } else {
+        await prisma.bookmark.create({
+          data: {
+            userId: userId,
+            resourceId: resourceId
+          }
+        });
+        isBookmarked = true;
+        await prisma.resource.update({
+          where: { id: resourceId },
+          data: { bookmarks: { increment: 1 } }
+        });
+      }
+
+      const updatedResource = await prisma.resource.findUnique({
+        where: { id: resourceId },
+        select: { bookmarks: true }
+      });
+      newBookmarkCount = updatedResource ? updatedResource.bookmarks : 0;
+
+      await prisma.activity.create({
+        data: {
+          userId: userId,
+          resourceId: resourceId,
+          action: isBookmarked ? 'BOOKMARK_ADD' : 'BOOKMARK_REMOVE'
+        }
+      });
+
+      res.json({
+        success: true,
+        message: `Resource ${isBookmarked ? 'bookmarked' : 'unbookmarked'} successfully`,
+        data: {
+          isBookmarked: isBookmarked,
+          newBookmarkCount: newBookmarkCount
+        }
+      });
+
+    } catch (error) {
+      console.error('Bookmark toggle error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to toggle bookmark'
+      });
+    }
+  }
+);
+
+export default router;

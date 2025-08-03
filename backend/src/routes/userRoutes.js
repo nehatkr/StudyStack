@@ -1,6 +1,6 @@
-const express = require('express');
-const { PrismaClient } = require('@prisma/client');
-const { authenticateToken, authorize } = require('../middleware/authMiddleware');
+import express from 'express';
+import { PrismaClient } from '@prisma/client';
+import { authenticateToken, authorize }  from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -456,4 +456,4 @@ router.get('/analytics',
   }
 );
 
-module.exports = router;
+export default router;
