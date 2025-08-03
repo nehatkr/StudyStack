@@ -37,15 +37,27 @@ app.get('/', (req, res) => {
 
 
 // Initialize Supabase Admin client
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-  {
-    auth: {
-      persistSession: false,
-    },
-  }
-);
+// const createClerkSupabaseClient = (clerkToken) => createClient(
+//   process.env.VITE_SUPABASE_URL,
+//   process.env.VITE_SUPABASE_ANON_KEY,
+//   	    {
+// 	      global: {
+// 	        // Get the custom Supabase token from Clerk
+// 	        fetch: async (url, options = {}) => {
+	          
+// 	          // Insert the Clerk Supabase token into the headers
+// 		        const headers = new Headers(options?.headers)
+// 	          headers.set('Authorization', `Bearer ${clerkToken}`)
+	          
+// 	          // Call the default fetch
+// 	          return fetch(url, {
+// 	            ...options,
+// 	            headers,
+// 	          })
+// 	        },
+// 	      },
+// 	    },
+// );
 
 // --- NEW SUPABASE AUTH ENDPOINT ---
 app.post("/api/auth/supabase-token", async (req, res) => {
@@ -132,8 +144,9 @@ app.post("/api/auth/supabase-token", async (req, res) => {
     } else {
       console.log('User found in Prisma DB:', dbUser.id);
     }
+// const client = createClerkSupabaseClient()
 
-    const { data: { user: supabaseAuthUser }, error: signInError } = await supabaseAdmin.auth.signInWithIdToken({
+    const { data: { user: supabaseAuthUser }, error: signInError } = await client.auth.signInWithIdToken({
       provider: 'clerk',
       token: clerkToken,
     });
